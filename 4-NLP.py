@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-build_df.py
+NLP.py
 
 Purpose:
-    Build the dataframe with all the necessary information
+    Get the LDA topics for the tweets
 
 Version:
     1       First start
@@ -19,62 +19,71 @@ Author:
 ### Imports
 import os
 import pandas as pd
-from readwrite_outline import readjson
-# import pandas as pd
+import pickle
+from tweet_preprocessor import tokenize_tweets
+from gensim import corpora
+from gensim.models import LdaModel
+import pyLDAvis
+import pyLDAvis.gensim_models as gensimvis
+
 # import matplotlib.pyplot as plt
+##########################################################
+def remove_amp(tweet):
+    """Takes a string and removes 'amp ' """
+    tweet = tweet.replace('amp ', '')
+    return tweet
 
 ###########################################################
 ### main
 def main():
     # Magic numbers
     path = os.getcwd()
-    handles = pd.read_pickle(path + '/Input/handles_df.pkl')
-    demographics = pd.read_csv(path + "/Input/legislators-current.csv")
-    demographics_hist = pd.read_csv(path + "/Input/legislators-historical.csv")
+    df = pd.read_pickle(path + "/Output/clean_data.pkl")
     
-    col_names = ["Name", "Twitter Handle", "Tweet", "Female", "govtrack_id"]
-    df = pd.DataFrame(columns=col_names)
+    # More cleaning (remove links, stopwords, etc..)
+    df = tokenize_tweets(df)
+    df.reset_index(inplace=True)
+    # Remove word "amp"
+    df.tokens = df.tokens.apply(remove_amp)
     
-    for index, senator in handles.iterrows():
-        name = senator["Name"]
-        handle = senator["Twitter Handle"][1:]
-        not_found = True
-        # Find gender and id of senator
-        for index1, historical in demographics.iterrows():
-            if historical["last_name"] in name and historical["first_name"] in name:
-                govtrack = historical["govtrack_id"]
-                if historical["gender"]== "F":
-                    female = 1
-                else:
-                    female = 0
-                not_found = False
-        # If not actual senator search in the historical data
-        if not_found:
-            for index1, historical in demographics_hist.iterrows():
-                if historical["last_name"] in name and historical["first_name"] in name:
-                    govtrack = historical["govtrack_id"]
-                    if historical["gender"]== "F":
-                        female = 1
-                    else:
-                        female = 0
-        # Load tweets of the senator
-        try:
-            feed = readjson(path+"/Input/tweets_"+handle+".json")
-        except:
-            print("No file for tweets of %s" % (handle))
-            #continue
-        # Attach tweets to dataframe
-        for tweet in feed:
-            tweet_text = tweet["full_text"]
-            temp_df = pd.DataFrame([list([name, handle, tweet_text, female, govtrack])], columns = col_names)
-            df = df.append(temp_df)
-
-    # Estimation
-    df.to_pickle(path+"/Output/clean_data.pkl")
-
-    # Output
-    print ("The dataframe has been pickled.\n")
-
+    # Create dictionary
+    dictionary = corpora.Dictionary()
+    
+    # Create BoW
+    BoW_corpus = [dictionary.doc2bow(doc, allow_update=True) for doc in df["tokens"].str.split()]
+    pickle.dump(BoW_corpus, open(path+'/Output/gensim_corpus_corpus.pkl', 'wb'))
+    dictionary.save(path+'/Output/gensim_dictionary.gensim')
+    
+    # Estimate model
+    k = 40
+    lda = LdaModel(BoW_corpus, id2word=dictionary,  alpha = "auto", 
+                   num_topics = k, decay = 0.8, iterations = 100,
+                   random_state = 420, minimum_probability=0.0)
+    
+    # Print topics
+    for topic_id in range(lda.num_topics):
+        topk = lda.show_topic(topic_id, 10)
+        topk_words = [ w for w, _ in topk ]
+        print('{}: {}'.format(topic_id, ' '.join(topk_words)))
+    
+    # Extract topics
+    topic_matrix = []
+    for i in range(len(df)):
+        topic_matrix.append(lda.get_document_topics(dictionary.doc2bow(df.tokens[i].split())))
+    
+    # Transpose matrix
+    topics = [[p[l][1] for p in topic_matrix] for l in range(k)]
+    
+    # Attach to dataframe
+    for i in range(k):
+        df["topic_"+str(i)] = topics[i]
+        
+    # Store results
+    df.to_pickle(path + "/Output/data_w_topics.pkl")
+    lda.save(path+'/Output/gensim_model.gensim')
+    
+    print("NLP topic classification is done.")
+    
 ###########################################################
 ### start main
 if __name__ == "__main__":

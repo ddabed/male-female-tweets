@@ -32,7 +32,7 @@ def main():
     demographics = pd.read_csv(path + "/Input/legislators-current.csv")
     demographics_hist = pd.read_csv(path + "/Input/legislators-historical.csv")
     
-    col_names = ["Name", "Twitter Handle", "Tweet", "Female", "govtrack_id"]
+    col_names = ["name", "twitter_handle", "tweet", "female", "govtrack_id"]
     df = pd.DataFrame(columns=col_names)
     
     for index, senator in handles.iterrows():
