@@ -68,7 +68,7 @@ def main():
             tweet_text = tweet["full_text"]
             temp_df = pd.DataFrame([list([name, handle, tweet_text, female, govtrack])], columns = col_names)
             df = df.append(temp_df)
-
+    df = df.drop_duplicates(subset='tweet')
     # Estimation
     df.to_pickle(path+"/Output/clean_data.pkl")
 
